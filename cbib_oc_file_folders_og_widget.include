@@ -1,0 +1,568 @@
+<?php
+
+require_once 'cbib_oc_file_folders_org_api.include';
+/**
+ * Implements hook_field_widget_info().
+ */
+function cbib_oc_file_folders_org_field_widget_info() {
+  return array(
+    'oc_file_folders_org' => array(
+      'label' => t('oc file folders'),
+      'field types' => array('file'),
+      'settings' => array(
+        'progress_indicator' => 'throbber',
+      ),
+      'behaviors' => array(
+        'multiple values' => FIELD_BEHAVIOR_CUSTOM,
+        'default value' => FIELD_BEHAVIOR_NONE,
+      ),
+    ),
+  );
+}
+/**
+ * Implements hook_field_widget_form().
+ */
+function cbib_oc_file_folders_org_field_widget_form(&$form, &$form_state, $field, $instance, $langcode, $items, $delta, $element) {
+    
+  $defaults = array(
+    'fid' => 0,
+    'display' => !empty($field['settings']['display_default']),
+    'description' => '',
+  );
+
+  // Load the items for form rebuilds from the field state as they might not be
+  // in $form_state['values'] because of validation limitations. Also, they are
+  // only passed in as $items when editing existing entities.
+  $field_state = field_form_get_state($element['#field_parents'], $field['field_name'], $langcode, $form_state);
+  if (isset($field_state['items'])) {
+    $items = $field_state['items'];
+  }
+
+  // Essentially we use the managed_file type, extended with some enhancements.
+  $element_info = element_info('managed_file');
+  $element += array(
+    '#type' => 'managed_file',
+    '#upload_location' => file_field_widget_uri($field, $instance),
+    '#upload_validators' => file_field_widget_upload_validators($field, $instance),
+    '#value_callback' => 'file_field_widget_value',
+    '#process' => array_merge($element_info['#process'], array('cbib_oc_file_folders_org_field_widget_process')),
+    '#progress_indicator' => $instance['widget']['settings']['progress_indicator'],
+    // Allows this field to return an array instead of a single value.
+    '#extended' => TRUE,
+  );
+
+  if ($field['cardinality'] == 1) {
+    // Set the default value.
+    $element['#default_value'] = !empty($items) ? $items[0] : $defaults;
+    // If there's only one field, return it as delta 0.
+    if (empty($element['#default_value']['fid'])) {
+      $element['#description'] = theme('file_upload_help', array('description' => $element['#description'], 'upload_validators' => $element['#upload_validators']));
+    }
+    $elements = array($element);
+  }
+  else {   
+            if($_POST['_triggering_element_value'] == "Upload")
+            {
+                foreach($items as $index => $up_item)
+                {
+                    if(isset($up_item['resup']))
+                    {
+                        $weigth = get_file_weigth($up_item['fid'],$element['#entity']->nid,$instance['field_name']);
+                        if($weigth == null)
+                        {
+                            $items[$index]['_weight'] = find_new_folder_weigth();
+                        }                        
+                    }
+                }
+            }
+           
+      foreach ($items as $item) {
+        $weigth = get_file_weigth($item['fid'],$element['#entity']->nid,$instance['field_name']);
+        if($weigth == null)
+        {
+          $weigth = $item['_weight'];
+        }
+        else {
+            //$weigth = ;
+        }
+        $elements[$delta] = $element;
+        $elements[$delta]['#default_value'] = $item;
+        $elements[$delta]['#weight'] = $weigth != null ? $weigth : $delta;
+        //$elements[$delta]['#weight'] = $delta;
+        $elements[$delta]['#'] = $delta;
+        // Add special classes to be used for tabledrag.js.
+
+        $delta++;
+    }
+    // And then add one more empty row for new uploads except when this is a
+    // programmed form as it is not necessary.
+    if (($field['cardinality'] == FIELD_CARDINALITY_UNLIMITED || $delta < $field['cardinality']) && empty($form_state['programmed'])) {
+     
+      $elements[$delta] = $element;
+      $elements[$delta]['#default_value'] = $defaults;
+      $elements[$delta]['#weight'] = $delta;
+      $elements[$delta]['#required'] = ($element['#required'] && $delta == 0);
+    }
+    // The group of elements all-together need some extra functionality
+    // after building up the full list (like draggable table rows).
+    $elements['#file_upload_delta'] = $delta;
+    $elements['#theme'] = 'cbib_oc_file_folders_org_widget_multiple';
+    $elements['#theme_wrappers'] = array('fieldset');
+    $elements['#process'] = array('cbib_oc_file_folders_org_field_widget_process_multiple');
+    $elements['#title'] = $element['#title'];
+    $elements['#description'] = $element['#description'];
+    $elements['#field_name'] = $element['#field_name'];
+    $elements['#language'] = $element['#language'];
+    $elements['#display_field'] = $field['settings']['display_field'];
+
+    // Add some properties that will eventually be added to the file upload
+    // field. These are added here so that they may be referenced easily through
+    // a hook_form_alter().
+    $elements['#file_upload_title'] = t('Add a new file');
+    $elements['#file_upload_description'] = theme('file_upload_help', array('description' => '', 'upload_validators' => $elements[0]['#upload_validators']));
+    
+  }
+  
+  /*
+   * Extend the drupal tabledrag.js with our own code.
+   */
+  drupal_add_js(drupal_get_path('module', 'cbib_oc_file_folders_org') ."/js/cbib_oc_file_folders_org.js");
+  if(isset($instance['settings']['description_field']) && $instance['settings']['description_field'])
+  {
+      //if descrition field is active , the .indend class should have a larger
+      //heigth
+      drupal_add_css('.indentation {height:6.7em !important;}', 'inline');
+  }
+  /*
+   * Resumeable upload integration
+   */
+  if(isset($instance['settings']['resup']) && $instance['settings']['resup'])
+  {
+    $keys = element_children($elements);
+    $delta = end($keys);
+
+    $cardinality = $field['cardinality'];
+    $elements[$delta]['#file_resup_max_files'] = $cardinality != FIELD_CARDINALITY_UNLIMITED ? $cardinality - $delta : -1;
+
+    $upload_validators = $elements[$delta]['#upload_validators'];
+    $upload_validators['file_validate_size'] = array(file_resup_max_filesize($instance));
+    $elements[$delta]['#file_resup_upload_validators'] = $upload_validators;
+
+    $elements[$delta]['#process'][] = 'file_resup_field_widget_process';
+    $elements[$delta]['#file_value_callbacks'][] = 'file_resup_field_widget_value';
+  }
+
+    /*
+     * Add some needed elements to make it all work.
+     */
+    $elements['oc_folder_field_group'] = array(
+        '#type' => 'fieldset',
+        '#title' => t('Tilføj mappe (Brug denne funktion, når du har brug for at sortere vedhæftede filer i mapper.)'),
+        '#collapsible' => TRUE,
+        '#collapsed' => TRUE,        
+      );
+    $elements['oc_folder_field_group']['oc_folder_new folder_name'] = array(
+              '#type' => 'textfield',
+              '#name' => 'oc_folder_new folder_name',
+              '#attributes' => array('placeholder' => 'Skriv navnet på din nye mappe her.'),
+              '#value' => '',
+              '#description' => '<b><br/>- Når din mappe er tilføjet kan du trække filer ind under mappen. <br/>- Du kan indrykke mapper under andre mapper indtil det 3. niveau<br/> - Du kan omsortere rækkefølgen af mapper og filer ved at trække i + tegnet ud for fil/mappe navnet</b>'
+             );
+    $elements['oc_folder_field_group']['add_folder'] = array(
+              '#type' => 'button',
+              '#id' => '_add_oc_file_folder',
+              '#value' => t('Tilføj mappe'),
+              '#ajax' => array('callback' => 'oc_folder_form_ajax_handler'),
+             );
+    $elements['oc_folder_field_group']['oc_folder_field_name'] = array(
+              '#type' => 'hidden',
+              '#name' => 'oc_folder_field_name',
+              '#value' => $field['field_name'],
+             );
+    $_POST['oc_folder_field_name'] = $field['field_name'];
+    $_POST['oc_folder_include_description'] = $instance['settings']['description_field'];
+   return $elements;
+}
+function theme_cbib_oc_file_folders_org_widget_multiple($variables) {
+    $node = menu_get_object();
+    if(isset($_POST['oc_folders']['und']))
+    {
+        $folders = build_elements_from_postback($_POST['oc_folders']['und']);
+        $_POST['oc_folders']['und'] = $folders;
+    }
+    else
+    {
+        
+        if($node != null)
+        {
+            $oc_folders = get_folders($node->nid,$_POST['oc_folder_field_name']);
+            $_POST['oc_folders']['und'] = $oc_folders;
+        }
+
+    }
+  $element = $variables['element'];
+  
+  // Special ID and classes for draggable tables.
+  $weight_class = $element['#id'] . '-weight';
+  $table_id = $element['#id'] . '-table';
+
+  // Build up a table of applicable fields.
+  $headers = array();
+  $headers[] = t('File information');
+  if ($element['#display_field']) {
+    $headers[] = array(
+      'data' => t('Display'),
+      'class' => array('checkbox'),
+    );
+  }
+  $headers[] = t('Weight');
+  $headers[] = t('Operations');
+
+  // Get our list of widgets in order (needed when the form comes back after
+  // preview or failed validation).
+  $widgets = array();
+  if(isset($_POST['oc_folders']))
+  {      
+      //make folder array
+      foreach($_POST['oc_folders']['und'] as $index => $folder)
+      {
+           //$widgets[$index] = array('#weight' => $folder['_weight'],'#default_value' => array('is_folder' => true,'mlid' => $folder['mlid'])
+           //   ,'name' => '','#file' => array('fid' => '-1','description' => 'tester'));
+           $widgets[$index] = $folder;
+           $widgets[$index]['remove_button']['#ajax']['callback'] =
+           $widgets[$index]['remove_button'] = array(
+            '#id' => 'remove_folder_' . $folder['#file']['fid'],
+            '#name' => 'remove_folder_'. $folder['#file']['fid'] ,  //add the folder id so we can remove.
+            '#type' => 'submit',
+            '#value' => t('fjern'),
+            '#validate' => array(),
+            '#submit' => array(''),
+            '#ajax' => array('path' => 'file/folder/ajax/add'),
+           );
+           $widgets[$index]['remove_button'] = ajax_pre_render_element($widgets[$index]['remove_button']);
+      }
+      foreach (element_children($element) as $key) {
+          if(isset($element[$key]['#entity']))
+          {
+             $element[$key]['_weight']['#value'] =  $element[$key]['#weight'];
+          }
+         $widgets[] = &$element[$key];
+      }
+  }
+  else
+  {
+      foreach (element_children($element) as $key) {
+        $widgets[] = &$element[$key];
+      }
+      //usort($widgets, '_field_sort_items_value_helper');
+  }
+  //usort($widgets, '_field_sort_items_value_helper');
+
+  $rows = array();
+  $field_set_key = null;
+  foreach ($widgets as $key => &$widget) {
+      if(isset($widget['#default_value']['is_folder']))
+      {
+          $widget['#array_parents'] = array('oc_folders','und',$key);
+          $tmp['weight'] = array(
+            '#name' => cbib_oc_make_tabledrag_ref_name(array('oc_folders','und',$key),'_weight'),
+            '#type' => 'weight', 
+            '#title' => t('Weight'), 
+            '#default_value' => 0, 
+            '#value' => isset($widget['#weight']) ? $widget['#weight'] : 0,
+            '#delta' => sizeof($widgets), 
+            '#title_display' => 'invisible',
+          );
+           /*
+            * Create a weight element ourself as we are not processed like
+            * the other elements.
+            */
+           $widget['_weight'] =  form_process_weight( $tmp['weight']);
+      }
+    // Save the uploading row for last.
+    if ($widget['#file'] == FALSE && !isset($widget['#default_value']['is_folder'])) {
+        /*
+         * Allow for fieldset type , so it not rendered same as upload button.
+         */
+        if($widget['#type'] != 'fieldset')
+        {
+            $widget['#title'] = $element['#file_upload_title'];
+            $widget['#description'] = $element['#file_upload_description'];
+        }
+        else
+        {
+            unset($widget['_weight']);
+            $field_set_key = $key;
+        }
+      continue;
+    }
+
+    // Delay rendering of the buttons, so that they can be rendered later in the
+    // "operations" column.
+    $operations_elements = array();
+    foreach (element_children($widget) as $sub_key) {
+      if (isset($widget[$sub_key]['#type']) && $widget[$sub_key]['#type'] == 'submit') {
+        hide($widget[$sub_key]);
+        $operations_elements[] = &$widget[$sub_key];
+      }
+    }
+
+    // Delay rendering of the "Display" option and the weight selector, so that
+    // each can be rendered later in its own column.
+    if ($element['#display_field']) {
+      hide($widget['display']);
+    }
+    hide($widget['_weight']);
+
+    // Render everything else together in a column, without the normal wrappers.
+    $widget['#theme_wrappers'] = array();
+    $information = null;
+    if(!isset($widget['#default_value']['is_folder']))
+    {
+        $information = drupal_render($widget);
+    }
+    else
+    {
+        $widget['#'] = $key;
+        $information = oc_add_folder_to_form(false,array('oc_folders','und',$key),$widget);
+    }
+
+    // Render the previously hidden elements, using render() instead of
+    // drupal_render(), to undo the earlier hide().
+    $operations = '';
+    foreach ($operations_elements as $operation_element) {
+      $operations .= render($operation_element);
+    }
+    
+    $display = '';
+    if ($element['#display_field']) {
+      unset($widget['display']['#title']);
+      $display = array(
+        'data' => render($widget['display']),
+        'class' => array('checkbox'),
+      );
+    }
+    /*
+     * Add tabledrag elements for ordering.
+     */
+    $widget['plid'] = array();
+    $widget['mlid'] = array();
+    $widget['_weight']['#attributes']['class'] = array($weight_class,'menu-weight');
+      $widget['plid']['#attributes']['class'] = array(
+        'menu-plid',
+      );
+      $widget['mlid']['#attributes']['class'] = array(
+        'menu-mlid',
+      );
+      $widget['plid']['#value'] = isset($widget['#default_value']['plid']) &&  $widget['#default_value']['is_folder'] ? $widget['#default_value']['plid'] : get_file_pid($widget['#file']->fid,
+              $widgets[sizeof($widgets)-1]['#entity']->nid,$_POST['oc_folder_field_name']) ;
+      $widget['mlid']['#value'] = $widget['#file']->fid;
+      if(isset($widget['#default_value']['is_folder']))
+      {
+          $widget['#array_parents'][0] = "oc_folders";
+          $widget['mlid']['#value'] = $widget['#file']['fid'];
+          //$widget['_weight']['#name'] = cbib_oc_make_tabledrag_ref_name($widget['#array_parents'],'_weight');
+      }
+      $widget['mlid']['#name'] = cbib_oc_make_tabledrag_ref_name($widget['#array_parents'],'mlid');
+      $widget['plid']['#name'] = cbib_oc_make_tabledrag_ref_name($widget['#array_parents'],'plid');
+     
+      
+      $widget['plid']['#type'] = 'hidden';
+      $widget['mlid']['#type'] = 'hidden';
+ 
+      $weight = render($widget['_weight']) . drupal_render($widget['plid']) . drupal_render($widget['mlid']);
+    // Arrange the row with all of the rendered columns.
+    $row = array();
+    $row[] = $information;
+    if ($element['#display_field']) {
+      $row[] = $display;
+    }
+    $row[] = $weight;
+    $row[] = $operations;
+    $rows[] = array(
+      'data' => $row,
+      'class' => isset($widget['#attributes']['class']) ? array_merge($widget['#attributes']['class'], array('draggable')) : array('draggable'), 
+      'widget' => $widget,
+    );
+  }
+  $node = $widgets[sizeof($widgets)-1]['#entity']->nid;
+  //unset($widgets[$field_set_key]); // json encode does not like fieldsets.
+  array_splice($widgets,$field_set_key,1); // the above ruins data..splice or shift.
+  if($node != null)
+  {
+    oc_file_folders_save_data($node,$_POST['oc_folder_field_name'],$widgets); // save the data
+    validate_all_plids($rows); //incase the parent is deleted and content remains.
+  }
+  $theme_me = build_render_file_tree($rows);
+  drupal_add_tabledrag($table_id, 'match', 'parent', 'menu-plid', 'menu-plid', 'menu-mlid', TRUE, 3);
+  drupal_add_tabledrag($table_id, 'order', 'sibling', 'menu-weight');
+
+  $output = theme('cbib_oc_file_folders_org_table', array('header' => $headers, 'rows' => $theme_me, 'table_attributes' => array('id' => $table_id)));
+  if(empty($rows))
+  {
+     $element['oc_folder_field_group']['#title'] = "Tilføj mappe (Brug denne funktion, når du har brug for at sortere vedhæftede filer i mapper.)";
+     $top_out = drupal_render($element['oc_folder_field_group']);
+    
+    // -2 works.. because oc_folder_field_group is outside index count.
+    $element[sizeof(element_children($element))-2]['resup']['#attributes']['data-description'] .= "<br/>Nyeste Filer placere sig i toppen af tabellen</strong>";
+    $top_out .= drupal_render_children($element);
+    $output = $top_out . $output; 
+  }
+  else
+  {
+    $element['oc_folder_field_group']['#title'] = "Tilføj mappe (Brug denne funktion, når du har brug for at sortere vedhæftede filer i mapper.)";
+    $top_out = drupal_render($element['oc_folder_field_group']);
+    
+    // -2 works.. because oc_folder_field_group is outside index count.
+    $element[sizeof(element_children($element))-2]['resup']['#attributes']['data-description'] .= "<br/>Nyeste Filer placere sig i toppen af tabellen</strong>";
+    $top_out .= drupal_render_children($element);
+    $output = $top_out . $output;
+  }
+
+  return $output;
+}
+function cbib_oc_make_tabledrag_ref_name($base,$target)
+{
+    $out = "";
+    foreach($base as $index => $val)
+    {
+        if($index == 0)
+        {
+            $out = $val;
+        }
+        else
+        {
+            $out .="[". $val . "]";
+        }
+    }
+    return $out .= "[".$target. "]";
+}
+/**
+ * An element #process callback for the file_generic field type.
+ *
+ * Expands the file_generic type to include the description and display fields.
+ */
+function cbib_oc_file_folders_org_field_widget_process($element, &$form_state, $form) {
+  $item = $element['#value'];
+  $item['fid'] = $element['fid']['#value'];
+
+  $field = field_widget_field($element, $form_state);
+  $instance = field_widget_instance($element, $form_state);
+  $settings = $instance['widget']['settings'];
+
+  $element['#theme'] = 'file_widget';
+
+  // Add the display field if enabled.
+  if (!empty($field['settings']['display_field']) && $item['fid']) {
+    $element['display'] = array(
+      '#type' => empty($item['fid']) ? 'hidden' : 'checkbox',
+      '#title' => t('Include file in display'),
+      '#value' => isset($item['display']) ? $item['display'] : $field['settings']['display_default'],
+      '#attributes' => array('class' => array('file-display')),
+    );
+  }
+  else {
+    $element['display'] = array(
+      '#type' => 'hidden',
+      '#value' => '1',
+    );
+  }
+
+  // Add the description field if enabled.
+  if (!empty($instance['settings']['description_field']) && $item['fid']) {
+    $element['description'] = array(
+      '#type' => variable_get('file_description_type', 'textfield'),
+      '#title' => t('Description'),
+      '#value' => isset($item['description']) ? $item['description'] : '',
+      '#maxlength' => variable_get('file_description_length', 128),
+      '#description' => t('The description may be used as the label of the link to the file.'),
+    );
+  }
+
+  // Adjust the Ajax settings so that on upload and remove of any individual
+  // file, the entire group of file fields is updated together.
+  if ($field['cardinality'] != 1) {
+    $parents = array_slice($element['#array_parents'], 0, -1);
+    $new_path = 'file/ajax/' . implode('/', $parents) . '/' . $form['form_build_id']['#value'];
+    $field_element = drupal_array_get_nested_value($form, $parents);
+    $new_wrapper = $field_element['#id'] . '-ajax-wrapper';
+    foreach (element_children($element) as $key) {
+      if (isset($element[$key]['#ajax'])) {
+        $element[$key]['#ajax']['path'] = $new_path;
+        //$element[$key]['#ajax']['wrapper'] = $new_wrapper;
+        $element[$key]['#ajax']['wrapper'] = $new_wrapper;
+        
+      }
+    }
+    unset($element['#prefix'], $element['#suffix']);
+  }
+
+  // Add another submit handler to the upload and remove buttons, to implement
+  // functionality needed by the field widget. This submit handler, along with
+  // the rebuild logic in file_field_widget_form() requires the entire field,
+  // not just the individual item, to be valid.
+  foreach (array('upload_button', 'remove_button') as $key) {
+    $element[$key]['#submit'][] = 'file_field_widget_submit';
+    $element[$key]['#limit_validation_errors'] = array(array_slice($element['#parents'], 0, -1));
+  }
+
+  return $element;
+}
+/**
+ * An element #process callback for a group of file_generic fields.
+ *
+ * Adds the weight field to each row so it can be ordered and adds a new Ajax
+ * wrapper around the entire group so it can be replaced all at once.
+ */
+function cbib_oc_file_folders_org_field_widget_process_multiple($element, &$form_state, $form) {
+  $element_children = element_children($element, TRUE);
+ 
+  $count = count($element_children);
+  /*
+   * make the wiegth fields like up
+   */
+   if(isset($_POST['oc_folders']))
+  {      
+      //make folder array
+      foreach($_POST['oc_folders']['und'] as $index => $folder)
+      {
+          $count++;
+      }
+      //$count--;
+  }
+  else
+  {
+      if(isset($form['#node'])) //only use this if the node is already created.
+      {
+        $folders = get_folders($form['#node']->nid,$element['#field_name']);
+        $count += sizeof($folders);
+      }
+  }
+  
+  foreach ($element_children as $delta => $key) {
+    if ($key != $element['#file_upload_delta']) {
+      $description = _file_field_get_description_from_element($element[$key]);
+      $element[$key]['_weight'] = array(
+        '#type' => 'weight',
+        '#title' => $description ? t('Weight for @title', array('@title' => $description)) : t('Weight for new file'),
+        '#title_display' => 'invisible',
+        '#delta' => $count,
+        '#default_value' => $delta,
+      );
+    }
+    else {
+      // The title needs to be assigned to the upload field so that validation
+      // errors include the correct widget label.
+      $element[$key]['#title'] = $element['#title'];
+      $element[$key]['_weight'] = array(
+        '#type' => 'hidden',
+        '#default_value' => $delta,
+      );
+    }
+  }
+
+  // Add a new wrapper around all the elements for Ajax replacement.
+  $element['#prefix'] = '<div id="' . $element['#id'] . '-ajax-wrapper" class="'.$_POST['oc_folder_field_name'] . "-folder-ajax" .'">';
+  $element['#suffix'] = '</div>';
+  return $element;
+}

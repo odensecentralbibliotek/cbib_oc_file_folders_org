@@ -1,0 +1,10 @@
+name = Cbib file folders
+description = gør at man kan skabe virtuelle folder i vedhæftninger.
+core = 7.x
+package = Centralbibliotek.dk
+version = 7.x-1.0
+project = cbib_oc_file_folders_org
+
+dependencies[] = file
+dependencies[] = file_resup
+dependencies[] = pdfpreview

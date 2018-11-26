@@ -1,0 +1,403 @@
+<?php
+
+require_once 'cbib_oc_file_folders_org_api.include';
+require_once 'cbib_oc_file_folders_og_widget.include';
+/**
+ * Implements hook_menu().
+ */
+function cbib_oc_file_folders_org_menu() {
+  $items = array();
+
+  $items['file/folder/ajax/add'] = array(
+    'page callback' => 'oc_folder_form_ajax_handler',
+    'delivery callback' => 'ajax_deliver',
+    'access arguments' => array('access content'),
+    'theme callback' => 'ajax_base_page_theme',
+    'type' => MENU_CALLBACK,
+  );
+
+  return $items;
+}
+function oc_folder_form_ajax_handler()
+{ 
+    $supress_error = false;
+    list($form, $form_state, $form_id, $form_build_id, $commands) = ajax_get_form();
+      if (!$form) {
+        // Invalid form_build_id.
+        drupal_set_message(t('An unrecoverable error occurred. Use of this form has expired. Try reloading the page and submitting again.'), 'error');
+        $commands = array();
+        $commands[] = ajax_command_replace(NULL, theme('status_messages'));
+        return array('#type' => 'ajax', '#commands' => $commands);
+      }
+  
+    if(strpos($_POST['_triggering_element_name'], 'remove_folder') !== false)
+    {
+        //remove a folder..
+        $remove_folder_id = explode('_',$_POST['_triggering_element_name'])[2];
+        foreach($_POST['oc_folders']['und'] as $index => $folder)
+        {
+            if($folder['mlid'] == $remove_folder_id)
+            {
+                unset($_POST['oc_folders']['und'][$index]);
+                break;
+            }
+        }
+        //$form_state['submitted'] = 0;
+        handle_remove_rebuild($form['#form_id'], $form, $form_state);
+    }
+    if($_POST['_triggering_element_name'] == "op" && $_POST['_triggering_element_value'] == "Tilføj mappe")
+    {
+        //add a folder to the top of the folder list.
+        $folder_name = $_POST['oc_folder_new_folder_name'];
+        if($folder_name != "")
+        {
+            if(!isset($_POST['oc_folders']['und']))
+            {
+                $_POST['oc_folders'] = array();
+                $_POST['oc_folders']['und'] = array();
+            }
+            $new_weigth = find_new_folder_weigth();
+            $_POST['oc_folders']['und'][] = create_new_folder($folder_name,$new_weigth);
+        }
+        
+        handle_remove_rebuild($form['#form_id'], $form, $form_state);
+        $supress_error = true;
+    }
+   // Process user input. $form and $form_state are modified in the process.
+ 
+
+  // Retrieve the element to be rendered.
+   $form = $form[$_POST['oc_folder_field_name']]['und'];
+
+  // Add the special Ajax class if a new file was added.
+  $form['#suffix'] .= '<span class="ajax-new-content"></span>';
+  
+
+  $output = (!$supress_error ? theme('status_messages') : "") . drupal_render($form);
+  $js = drupal_add_js();
+  $settings = call_user_func_array('array_merge_recursive', $js['settings']['data']);
+  $selector = $_POST['oc_folder_field_name'] . "-folder-ajax";
+  $commands[] = ajax_command_replace('div[class='.$selector.']', $output, $settings);
+  return array('#type' => 'ajax', '#commands' => $commands);
+}
+function find_new_folder_weigth()
+{
+    $field_name = isset($_POST['oc_folder_field_name']) ? $_POST['oc_folder_field_name'] : '';
+    $weigth = 0;
+    if(isset($_POST['oc_folders']['und']))
+    {
+        foreach($_POST['oc_folders']['und'] as $folder)
+        {
+            if($weigth > $folder['_weight'])
+            {
+                $weigth = $folder['_weight'];
+            }
+        }
+    }
+    if(isset($_POST[$field_name]['und']))
+    {
+        foreach($_POST[$field_name]['und'] as $file)
+        {
+            if($weigth > $file['_weight'])
+            {
+                $weigth = $file['_weight'];
+            }
+        }
+    }
+    return $weigth-1;
+}
+function handle_remove_rebuild($form_id,&$form,&$form_state)
+{
+    $form_state['values'] = array();
+    // With $_GET, these forms are always submitted if requested.
+    if ($form_state['method'] == 'get' && !empty($form_state['always_process'])) {
+      if (!isset($form_state['input']['form_build_id'])) {
+        $form_state['input']['form_build_id'] = $form['#build_id'];
+      }
+      if (!isset($form_state['input']['form_id'])) {
+        $form_state['input']['form_id'] = $form_id;
+      }
+      if (!isset($form_state['input']['form_token']) && isset($form['#token'])) {
+        $form_state['input']['form_token'] = drupal_get_token($form['#token']);
+      }
+    }
+        $unprocessed_form = $form;
+        $form = form_builder($form_id, $form, $form_state);
+        $form_state['rebuild'] = TRUE;
+        $form = drupal_rebuild_form($form['#form_id'], $form_state, $form);
+}
+function oc_add_folder_to_form($ajax = true,$parents = array('oc_folders','und','0'),$widget = array())
+{
+        $delta  = $widget['#'];
+        $output = '<div class="file-widget form-managed-file clearfix"><span class="file">';
+        $output .= '<img style="margin-right:3px" class="file-icon" alt="" title="text/plain" src="/'.drupal_get_path('module', 'cbib_oc_file_folders_org') . "/images/folder.png".'">'.$widget['name'].'</span>';
+        $output .= '<input name="oc_folders[und]['.$delta.'][fid]" value="'.$widget['#file']['fid'].'" type="hidden">';
+        $output .= '<input name="oc_folders[und]['.$delta.'][name]" value="'.$widget['name'].'" type="hidden">';
+        if($_POST['oc_folder_include_description'])
+        {
+            $element['description'] = array(
+            '#name' => 'oc_folders[und]['.$delta.'][description]',
+            '#type' => variable_get('file_description_type', 'textfield'),
+            '#title' => t('Description'),
+            '#value' => isset($widget['#file']['description']) ? $widget['#file']['description'] : '',
+            '#maxlength' => variable_get('file_description_length', 128),
+            '#description' => t('The description may be used as the label of the link to the file.'),
+          );
+            $output .= drupal_render($element);
+        }
+        $output .= '<input id="is_folder" name="oc_folders[und]['.$delta.'][is_folder]" value="1" type="hidden">';
+        $output .= '</div>';
+        return $output;
+}
+
+/**
+ * Implements hook_theme().
+ */
+function cbib_oc_file_folders_org_theme() {
+  return array(
+
+    // file.field.inc.
+    'cbib_oc_file_folders_org_widget' => array(
+      'render element' => 'element',
+    ),
+    'cbib_oc_file_folders_org_widget_multiple' => array(
+      'render element' => 'element',
+    ),
+    'cbib_oc_file_folders_org_table' => array(
+        'template' => 'oc_file_folders',
+        'variables' => array('headers' => NULL,'rows' => NULL,'table_attributes' => NULL),
+        'path' => drupal_get_path('module', 'cbib_oc_file_folders_org') . '/templates',
+       ),
+    'file_oc_file_folder_frontend_table' => array(
+      'template' => 'oc_file_folders_frontend',
+      'variables' => array('items' => NULL,'pdf_previews' => null,'entity' => NULL,'field_name' => NULL),
+      'path' => drupal_get_path('module', 'cbib_oc_file_folders_org') . '/templates',
+     ),
+    'file_oc_file_folder' => array(
+      'template' => 'oc_file_folders_folder',
+      'variables' => array('row' => NULL),
+      'path' => drupal_get_path('module', 'cbib_oc_file_folders_org') . '/templates',
+     ),
+    'cbib_oc_folde_folders_pdfpreview_formatter' => array(
+        'function' => 'theme_cbib_oc_file_folders_org_formatter',
+        'render element' => 'element',
+      ),
+  );
+}
+function cbib_oc_file_folders_org_field_formatter_info() {
+ return array(
+    'file_oc_folder_default' => array(
+      'label' => t('oc filer og mapper'),
+      'field types' => array('file'),
+    )
+  );
+}
+function cbib_oc_file_folders_org_field_formatter_view($entity_type, $entity, $field, $instance, $langcode, &$items, $display) {
+  $element = array();
+  $return_data = pdfpreview_field_formatter_view($entity_type, $entity, $field, $instance, $langcode, $items, array('type' => 'pdfpreview','settings' => array('tag' => 'span', 'image_link' => 'pdf_file','image_style' => 'medium')));
+  $pdf_previews = cbib_oc_file_folders_org_pdf_preview_data($items, $display);
+  //$page = page_manager_get_current_page();
+  switch ($display['type']) {
+      case 'file_oc_folder_default':
+      drupal_add_css(drupal_get_path('module', 'cbib_oc_file_folders_org') . "/css/cbib_oc_file_folders_frontend.css");
+      drupal_add_js(drupal_get_path('module', 'cbib_oc_file_folders_org') . "/js/cbib_oc_file_folders_org_frontend.js");
+      $tmp_items = oc_file_folders_get_data($entity->nid,$field['field_name']);
+      if (!empty($tmp_items)) {
+          $items = $tmp_items;
+          $convert = array();
+          foreach($items as $item)
+          {
+              $convert[] = array('widget' => $item,'data' => $item);
+          }
+        validate_all_plids($convert);
+        $render_tree = build_render_file_tree($convert);
+        
+        //$render_tree = array_reverse($render_tree,TRUE);
+        $element[0] = array(
+          '#theme' => 'file_oc_file_folder_frontend_table',
+          '#items' => $render_tree,
+          '#pdf_previews' => $pdf_previews,
+          '#field_name' => $field['field_name'],
+          '#entity' => $entity,
+        );
+      }
+      elseif(!empty($items))
+      {
+          //fallback to default foreach ($items as $delta => $item) {
+          $items = array_reverse($items);
+          /*foreach ($items as $delta => $item) {
+                $element[$delta] = array(
+                  '#theme' => 'file_link',
+                  '#file' => (object) $item,
+                );
+              }*/
+         
+          return $return_data;
+      }
+      else
+      {
+          //fake element to trigger rendering , usefull when only folders in 
+          // the field.
+          $items[0] = array('placeholder' => 'test'); 
+          $element[0] = array(
+          '#theme' => 'file_oc_file_folder_frontend_table',
+          '#items' => $items,
+          '#field_name' => $field['field_name'],
+          '#entity' => $entity,
+           );
+      }
+  }
+  return $element;
+}
+function cbib_oc_file_folders_org_sort_render_frontend($a, $b) {
+  $a_weight = is_array($a) && isset($a['weight']) ? $a['weight'] : 0;
+  $b_weight = is_array($b) && isset($b['weight']) ? $b['weight'] : 0;
+  if ($a_weight == $b_weight) {
+    return 0;
+  }
+  return $a_weight < $b_weight ? -1 : 1;
+}
+function cbib_oc_file_folders_org_pdf_preview_data($items, $display)
+{
+        $display['type'] = "pdfpreview";
+        $element = array();
+        $settings = $display['settings'];
+        $image_items = array();
+        $non_pdfs = array();
+        list($preview_width, $preview_height) = explode('x', variable_get('pdfpreview_previewsize', PDFPREVIEW_DEFAULT_SIZE));
+        // save image_style session
+        $image_style = $settings['image_style'];
+
+        foreach ($items as $delta => $item) {
+          if (isset($item['display']) && !$item['display']) continue; //don't show hidden files
+            if (($item['filemime'] == 'application/pdf') && ($preview_uri = _pdfpreview_create_preview($item, $image_style))) {
+
+            $image_items[$delta] = array(
+              'fid' => $item['fid'],
+              'uri' => $preview_uri,
+              'alt' => isset($item['description']) ? $item['description'] : '',
+              'width' => $preview_width,
+              'height' => $preview_height,
+              'title' => isset($item['description']) ? $item['description'] : '',
+              'attributes' => array(
+                'class' => array('pdfpreview-file'),
+                //'onmouseover' => $preview_uri,
+              )
+            );
+            if ($settings['image_link'] == 'pdf_file') {
+              $uri[$delta] = array(
+                'path' => file_create_url($item['uri']),
+                'options' => array(
+                  'entity' => $entity,
+                ),
+              );
+            }
+          }
+          else {
+            //For non pdf files, we defer processing.
+            //$non_pdfs[$delta] = $item;
+          }
+        }
+    // Render PDF preview files using the image or picture formatter.
+    switch ($display['type']) {
+      case 'pdfpreview':
+        $element += image_field_formatter_view($entity_type, $entity, $field, $instance, $langcode, $image_items, $display);
+        break;
+
+      case 'pdfpreview_picture':
+        $picture_display = array_merge(array(), $display);
+        $picture_display['type'] = 'picture';
+        $element += picture_field_formatter_view($entity_type, $entity, $field, $instance, $langcode, $image_items, $picture_display);
+        break;
+    }
+    foreach (element_children($element) as $delta) {
+      $element[$delta]['#theme_wrappers'][] = 'cbib_oc_folde_folders_pdfpreview_formatter';
+      $element[$delta]['#settings'] = $settings;
+      $element[$delta]['#fid'] = $items[$delta]['fid'];
+      $element[$delta]['filename'] = $items[$delta]['filename'];
+
+      if(($element[$delta]['#settings']['image_link'] === 'pdf_file') && isset($uri)) {
+        $element[$delta]['#path'] = $uri[$delta];
+      }
+    }
+    
+    $newKey = array();
+    foreach($element as $key => $ele) {
+          if (($ele['filename'] === $items[$key]['filename']) || ($ele['#file']->filename === $items[$key]['filename'])) {
+         $newKey[$key] = $ele;
+    }
+        foreach($items as $k => $i) {
+    if (($ele['filename'] === $i['filename']) || ($ele['#file']->filename === $i['filename'])) {
+         $newKey[$k] = $ele;
+         }
+      }
+    }
+    krsort($newKey);
+    return $newKey;
+}
+function cbib_oc_file_folders_org_node_insert($node) {
+    
+    if(isset($_POST['oc_folder_field_name']) && $_POST['oc_folder_field_name'] != null)
+    {
+        $field_name = $_POST['oc_folder_field_name'];
+        $folders = array();
+        if($_POST['oc_folders']['und'])
+        {
+
+            $folders = build_elements_from_postback($_POST['oc_folders']['und']);
+        }
+         $files = build_elements_from_postback($_POST[$field_name]['und']);
+         $folders = array_merge ( $folders,$files);
+         $nid = $node->nid;
+         oc_file_folders_save_data($nid,$_POST['oc_folder_field_name'],$folders);
+    }
+}
+function cbib_oc_file_folders_org_node_update($node) {
+    if(isset($_POST['oc_folder_field_name']) && $_POST['oc_folder_field_name'] != null)
+    {
+        $field_name = $_POST['oc_folder_field_name'];
+        $folders = array();
+        if($_POST['oc_folders']['und'])
+        {
+
+            $folders = build_elements_from_postback($_POST['oc_folders']['und']);
+         }
+         $files = build_elements_from_postback($_POST[$field_name]['und']);
+         $folders = array_merge ( $folders,$files);
+         $nid = $node->nid;
+         oc_file_folders_save_data($nid,$_POST['oc_folder_field_name'],$folders);
+    }
+}
+function cbib_oc_file_folders_org_pdfpreview_render_help($fid,$previews)
+{
+    foreach($previews as $id => $preview)
+    {
+        if($preview['#fid'] == $fid)
+        {
+            return drupal_render($previews[$id]);
+        }
+    }
+    return "";
+}
+function theme_cbib_oc_file_folders_org_formatter($variables) {
+    $element = $variables['element'];
+  $item = $element['#item'];
+  $wrapper_tag = $element['#settings']['tag'];
+
+  if(!empty($item['title'])) {
+     $filename = $item['title'];
+  }else {
+     $filename = $element['filename'];
+  }
+
+  $description = ($element['#settings']['show_description'] && isset($item['description'])) ? '<' . $wrapper_tag . ' class="pdfpreview-description">' . $item['description'] . '</' . $wrapper_tag . '>' : '' ;
+  return sprintf(
+    '<div class="pdfpreview" id="pdfpreview-%s">'
+    . ' <%s class="pdfpreview-image-wrapper">%s</%s>'
+    . ' %s'
+    . '</div>',
+    $item['fid'],
+    $wrapper_tag, $element['#children'], $wrapper_tag,
+    $description
+  );
+}

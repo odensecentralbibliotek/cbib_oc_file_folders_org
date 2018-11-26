@@ -1,0 +1,30 @@
+<?php
+function cbib_oc_file_folders_org_schema() {
+  $schema['oc_file_folder_org'] = array(
+      'fields' => array(
+       'id' => array(
+        'type' => 'serial',
+        'unsigned' => TRUE,
+        'not null' => TRUE),
+      'nid' => array(
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE),
+      'field_name' => array(
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        ),
+      'widgets' => array(
+        'type' => 'text',
+        'size' => 'big')
+      ),
+      'unique keys' => array(
+      'nid_field_name' => array('nid', 'field_name'),
+      ),
+     // specification for mytable1
+     'primary key' => array('id'),
+  );
+ 
+  return $schema;
+}
