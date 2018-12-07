@@ -268,7 +268,7 @@ function cbib_oc_file_folders_org_pdf_preview_data($items, $display)
         // save image_style session
         $image_style = isset($settings['image_style']) ? $settings['image_style'] : "large";
         $display['settings']['image_style'] = $image_style;
-        $display['settings']['image_link'] = if(isset($display['settings']['image_link'])) ? $display['settings']['image_link'] : 'file';
+        $display['settings']['image_link'] = isset($display['settings']['image_link']) ? $display['settings']['image_link'] : 'file';
         if(!isset($settings['image_link']))
         {
             $settings['image_link'] = "pdf_file";
