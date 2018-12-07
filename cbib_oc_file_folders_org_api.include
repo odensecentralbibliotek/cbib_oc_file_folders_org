@@ -11,8 +11,8 @@ function build_render_file_tree($rows)
         if(isset($value['widget']['plid']['#value']) && $value['widget']['plid']['#value'] == 0)
         {
             $parents[$value['widget']['mlid']['#value']] = array();
-            $parents[$value['widget']['mlid']['#value']]['data'] = $value['data'];
-            $parents[$value['widget']['mlid']['#value']]['class'] = $value['class'];
+            $parents[$value['widget']['mlid']['#value']]['data'] = isset($value['data']) ? $value['data'] : '';
+            $parents[$value['widget']['mlid']['#value']]['class'] = isset($value['class']) ? $value['class'] : '';
             $parents[$value['widget']['mlid']['#value']]['children'] = find_render_file_children($rows,$value['widget']['mlid']['#value']);
             if(sizeof($parents[$value['widget']['mlid']['#value']]['children']) != 0)
             {
@@ -56,13 +56,13 @@ function find_render_file_children($rows,$plid,$dept = 1)
     }
     foreach($rows as $i => $value)
     {
-        $child_plid = $value['widget']['plid']['#value'];
-        $child_mlid = $value['widget']['mlid']['#value'];
+        $child_plid = isset($value['widget']['plid']['#value']) ? $value['widget']['plid']['#value'] : null;
+        $child_mlid = isset($value['widget']['mlid']['#value']) ? $value['widget']['mlid']['#value'] : null;
         if((string)$child_plid == $plid && $child_mlid != $plid)
         {
             $child = array();
-            $child['data'] = $value['data'];
-            $child['class'] = $value['class'];
+            $child['data'] = isset($value['data']) ? $value['data'] : null;
+            $child['class'] = isset($value['class']) ? $value['class'] : '';
             $child['_weight']['#value'] = isset($value['widget']['#weight']) ? $value['widget']['#weight'] : 0;
             $child['children'] = find_render_file_children($rows,$child_mlid,$dept+1);
             if(sizeof($child['children']) != 0)
@@ -248,7 +248,7 @@ function oc_file_folders_render_children_frontend($children,$pid,$pdf_previews,$
     foreach($children as $number => $row)
     {
         
-        if(!$row['data']['#default_value']['is_folder'])
+        if(!isset($row['data']['#default_value']['is_folder']) || !$row['data']['#default_value']['is_folder'])
         {
             $file = file_load($row['data']['#file']['fid']);
             //the data is sometimes diff...perhaps try to fix.
@@ -274,7 +274,7 @@ function oc_file_folders_render_children_frontend($children,$pid,$pdf_previews,$
         else
         {
             //add empty folder
-            if($row['data']['#default_value']['is_folder'])
+            if(isset($row['data']['#default_value']['is_folder']) && $row['data']['#default_value']['is_folder'])
             {
                 $output .= "<div id='".$row['data']['mlid']['#value']."' class='oc_file_folder_child hide_folder'></div>";
             }

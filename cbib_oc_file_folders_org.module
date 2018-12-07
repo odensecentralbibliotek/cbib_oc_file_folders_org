@@ -269,6 +269,7 @@ function cbib_oc_file_folders_org_pdf_preview_data($items, $display)
         $image_style = isset($settings['image_style']) ? $settings['image_style'] : "large";
         $display['settings']['image_style'] = $image_style;
         $display['settings']['image_link'] = isset($display['settings']['image_link']) ? $display['settings']['image_link'] : 'file';
+        
         if(!isset($settings['image_link']))
         {
             $settings['image_link'] = "pdf_file";
@@ -293,7 +294,7 @@ function cbib_oc_file_folders_org_pdf_preview_data($items, $display)
               $uri[$delta] = array(
                 'path' => file_create_url($item['uri']),
                 'options' => array(
-                  'entity' => $entity,
+                  'entity' => isset($entity) ? $entity : null,
                 ),
               );
             }
@@ -306,7 +307,7 @@ function cbib_oc_file_folders_org_pdf_preview_data($items, $display)
     // Render PDF preview files using the image or picture formatter.
     switch ($display['type']) {
       case 'pdfpreview':
-        $element += image_field_formatter_view($entity_type, $entity, $field, $instance, $langcode, $image_items, $display);
+        $element += image_field_formatter_view(isset($entity_type) ? $entity_type : null, isset($entity) ? $entity : null, null, null, null, $image_items, $display);
         break;
 
       case 'pdfpreview_picture':
@@ -332,7 +333,7 @@ function cbib_oc_file_folders_org_pdf_preview_data($items, $display)
          $newKey[$key] = $ele;
     }
         foreach($items as $k => $i) {
-    if (($ele['filename'] === $i['filename']) || ($ele['#file']->filename === $i['filename'])) {
+    if (($ele['filename'] === $i['filename']) || (isset($ele['#file']) && $ele['#file']->filename === $i['filename'])) {
          $newKey[$k] = $ele;
          }
       }
