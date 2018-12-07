@@ -61,7 +61,7 @@ function cbib_oc_file_folders_org_field_widget_form(&$form, &$form_state, $field
     $elements = array($element);
   }
   else {   
-            if($_POST['_triggering_element_value'] == "Upload")
+            if(isset($_POST['_triggering_element_value']) && $_POST['_triggering_element_value'] == "Upload")
             {
                 foreach($items as $index => $up_item)
                 {

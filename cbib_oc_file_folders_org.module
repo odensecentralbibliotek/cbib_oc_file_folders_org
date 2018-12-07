@@ -266,8 +266,13 @@ function cbib_oc_file_folders_org_pdf_preview_data($items, $display)
         $non_pdfs = array();
         list($preview_width, $preview_height) = explode('x', variable_get('pdfpreview_previewsize', PDFPREVIEW_DEFAULT_SIZE));
         // save image_style session
-        $image_style = $settings['image_style'];
-
+        $image_style = isset($settings['image_style']) ? $settings['image_style'] : "large";
+        $display['settings']['image_style'] = $image_style;
+        $display['settings']['image_link'] = if(isset($display['settings']['image_link'])) ? $display['settings']['image_link'] : 'file';
+        if(!isset($settings['image_link']))
+        {
+            $settings['image_link'] = "pdf_file";
+        }
         foreach ($items as $delta => $item) {
           if (isset($item['display']) && !$item['display']) continue; //don't show hidden files
             if (($item['filemime'] == 'application/pdf') && ($preview_uri = _pdfpreview_create_preview($item, $image_style))) {
@@ -382,7 +387,7 @@ function cbib_oc_file_folders_org_pdfpreview_render_help($fid,$previews)
 function theme_cbib_oc_file_folders_org_formatter($variables) {
     $element = $variables['element'];
   $item = $element['#item'];
-  $wrapper_tag = $element['#settings']['tag'];
+  $wrapper_tag = isset($element['#settings']['tag']) ? $element['#settings']['tag'] : "div";
 
   if(!empty($item['title'])) {
      $filename = $item['title'];
