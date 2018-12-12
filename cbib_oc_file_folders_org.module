@@ -396,7 +396,7 @@ function theme_cbib_oc_file_folders_org_formatter($variables) {
      $filename = $element['filename'];
   }
 
-  $description = ($element['#settings']['show_description'] && isset($item['description'])) ? '<' . $wrapper_tag . ' class="pdfpreview-description">' . $item['description'] . '</' . $wrapper_tag . '>' : '' ;
+  $description = (isset($element['#settings']['show_description']) && $element['#settings']['show_description'] && isset($item['description'])) ? '<' . $wrapper_tag . ' class="pdfpreview-description">' . $item['description'] . '</' . $wrapper_tag . '>' : '' ;
   return sprintf(
     '<div class="pdfpreview" id="pdfpreview-%s">'
     . ' <%s class="pdfpreview-image-wrapper">%s</%s>'
