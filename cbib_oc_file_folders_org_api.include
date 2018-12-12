@@ -79,17 +79,20 @@ function get_file_pid($fid,$nid,$field_name)
     /*
      * First check if there is a submit
      */
-    foreach($_POST[$field_name]['und'] as $files)
+    if(isset($_POST[$field_name]['und']))
     {
-        if($files['fid'] == $fid)
+        foreach($_POST[$field_name]['und'] as $files)
         {
-            if($files['plid'] != "0")
+            if($files['fid'] == $fid)
             {
-                return $files['plid'];
-            }
-            else
-            {
-                break;
+                if($files['plid'] != "0")
+                {
+                    return $files['plid'];
+                }
+                else
+                {
+                    break;
+                }
             }
         }
     }
