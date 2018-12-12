@@ -98,13 +98,16 @@ function get_file_pid($fid,$nid,$field_name)
     }
     
     $data = oc_file_folders_get_data($nid,$field_name);
-    foreach($data as $elem)
+    if($data != null)
     {
-        $value = isset($elem['mlid']['#value']) ? $elem['mlid']['#value'] : $elem['#default_value']['mlid'];
-        $is_equal = strcmp($value,$fid);
-        if($is_equal == 0)
+        foreach($data as $elem)
         {
-            return isset($elem['plid']['#value']) ? $elem['plid']['#value'] : $elem['#default_value']['plid'];
+            $value = isset($elem['mlid']['#value']) ? $elem['mlid']['#value'] : $elem['#default_value']['mlid'];
+            $is_equal = strcmp($value,$fid);
+            if($is_equal == 0)
+            {
+                return isset($elem['plid']['#value']) ? $elem['plid']['#value'] : $elem['#default_value']['plid'];
+            }
         }
     }
     return 0;

@@ -356,7 +356,10 @@ function theme_cbib_oc_file_folders_org_widget_multiple($variables) {
       );
       $widget['plid']['#value'] = isset($widget['#default_value']['plid']) &&  $widget['#default_value']['is_folder'] ? $widget['#default_value']['plid'] : get_file_pid($widget['#file']->fid,
               $widgets[sizeof($widgets)-1]['#entity']->nid,$_POST['oc_folder_field_name']) ;
-      $widget['mlid']['#value'] = $widget['#file']->fid;
+      if(is_object($widget['#file']))
+      {
+        $widget['mlid']['#value'] = $widget['#file']->fid;
+      }
       if(isset($widget['#default_value']['is_folder']))
       {
           $widget['#array_parents'][0] = "oc_folders";
@@ -414,7 +417,10 @@ function theme_cbib_oc_file_folders_org_widget_multiple($variables) {
     $top_out = drupal_render($element['oc_folder_field_group']);
     
     // -2 works.. because oc_folder_field_group is outside index count.
-    $element[sizeof(element_children($element))-2]['resup']['#attributes']['data-description'] .= "<br/>Nyeste Filer placere sig i toppen af tabellen</strong>";
+    if(isset( $element[sizeof(element_children($element))-2]['resup']['#attributes']['data-description']))
+    {
+        $element[sizeof(element_children($element))-2]['resup']['#attributes']['data-description'] .= "<br/>Nyeste Filer placere sig i toppen af tabellen</strong>";
+    }
     $top_out .= drupal_render_children($element);
     $output = $top_out . $output;
   }
